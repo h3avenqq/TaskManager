@@ -16,55 +16,13 @@ namespace TaskManager
 {
     public partial class Form1 : Form
     {
-
-        List<Process> processesList = new List<Process>();
-
-        private enum ShowWindowEnum
-        {
-            Hide = 0,
-            ShowNormal = 1, ShowMinimized = 2, ShowMaximized = 3,
-            Maximize = 3, ShowNormalNoActivate = 4, Show = 5,
-            Minimize = 6, ShowMinNoActivate = 7, ShowNoActivate = 8,
-            Restore = 9, ShowDefault = 10, ForceMinimized = 11
-        };
-
-        private struct Windowplacement
-        {
-            public int length;
-            public int flags;
-            public int showCmd;
-            public System.Drawing.Point ptMinPosition;
-            public System.Drawing.Point ptMaxPosition;
-            public System.Drawing.Rectangle rcNormalPosition;
-        }
+        TaskManagerLib.TaskManagerLib taskManagerLib = new TaskManagerLib.TaskManagerLib();
 
         public Form1()
         {
             InitializeComponent();
         }
-
-        private void RefreshProcs()
-        {
-            dataGridView1.Rows.Clear();
-            processesList.Clear();
-            int k = 0;
-            var allProcess = from pr in Process.GetProcesses(".")
-                             orderby pr.Id
-                             select pr;
-            foreach (var proc in allProcess)
-            {
-                if (proc.MainWindowHandle != IntPtr.Zero && !String.IsNullOrEmpty(proc.MainWindowTitle.ToString()))
-                {
-                    string[] arr = { "" + proc.Id, "" + proc.ProcessName, "" + proc.MainWindowTitle,
-                    "" + proc.WorkingSet64 /1024/1024 + " MB", "" + proc.VirtualMemorySize64 /1024/1024 + " MB", ""+ proc.BasePriority};
-                    dataGridView1.Rows.Add(arr);
-                    processesList.Add(proc);
-                    k++;
-                }
-            }
-            this.Text = "Number of opened windows: " + k.ToString() + " Number of all processes " + allProcess.Count<Process>().ToString();
-        }
-
+  
         private void InitGrid()
         {
             dataGridView1.Columns.Add("Id", "Id");
@@ -75,100 +33,48 @@ namespace TaskManager
             dataGridView1.Columns.Add("BasePriority", "Base Priority");
         }
 
-        private static void KillProcessAndChildren(int pid)
-        {
-            if (pid == 0)
-            {
-                return;
-            }
-            ManagementObjectSearcher searcher = new ManagementObjectSearcher
-                    ("Select * From Win32_Process Where ParentProcessID=" + pid);
-            ManagementObjectCollection moc = searcher.Get();
-
-            foreach (ManagementObject mo in moc)
-            {
-                KillProcessAndChildren(Convert.ToInt32(mo["ProcessID"]));
-            }
-            try
-            {
-                Process proc = Process.GetProcessById(pid);
-                proc.Kill();
-            }
-            catch (ArgumentException)
-            {}
-        }
-
         private void btnSearch_Click(object sender, EventArgs e)
         {
-            RefreshProcs();
+            UpdateGrid();
         }
 
         private void Form1_Load(object sender, EventArgs e)
         {
             InitGrid();
-            RefreshProcs();
+            UpdateGrid();
         }
 
-        private IntPtr FindhWnd()
+        private void UpdateGrid()
         {
-            string name = dataGridView1.SelectedRows[0].Cells[1].Value.ToString();
-
-            foreach (var proc in processesList)
+            List<string[]> procs = taskManagerLib.RefreshProcs();
+            dataGridView1.Rows.Clear();
+            foreach (var proc in procs)
             {
-                if (proc.ProcessName.Contains(name))
-                {
-                    return proc.MainWindowHandle;
-                }
+                dataGridView1.Rows.Add(proc);
             }
-            return IntPtr.Zero;
         }
 
         //переименовывание
-        private void button1_Click(object sender, EventArgs e)
+        private void BtnRename_Click(object sender, EventArgs e)
         {
-            IntPtr hWnd = FindhWnd();
-            string name = Interaction.InputBox("Rename window");
-            SetWindowText(hWnd, name);
-        }
+            string name = dataGridView1.SelectedRows[0].Cells[1].Value.ToString();
+            taskManagerLib.Rename(name);
+            UpdateGrid();
 
-        [DllImport("user32.dll")]
-        static extern bool SetWindowText(IntPtr hWnd, string text);
+        }
 
         //сворачивание/разворачивание
         private void BtnCollapse_Click(object sender, EventArgs e)
         {
-            IntPtr wdwIntPtr = FindhWnd();
-
-            Windowplacement placement = new Windowplacement();
-            GetWindowPlacement(wdwIntPtr, ref placement);
-
-            if (placement.showCmd == 2)
-            {
-                ShowWindow(wdwIntPtr, ShowWindowEnum.Restore);
-            }
-            else
-            {
-                ShowWindow(wdwIntPtr,ShowWindowEnum.ShowMinimized);
-            }
-
-            SetForegroundWindow(wdwIntPtr);
+            string name = dataGridView1.SelectedRows[0].Cells[1].Value.ToString();
+            taskManagerLib.Collapse(name);
         }
-
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        static extern bool ShowWindow(IntPtr hWnd, ShowWindowEnum flags);
-
-        [DllImport("user32.dll")]
-        private static extern int SetForegroundWindow(IntPtr hwnd);
-
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        static extern bool GetWindowPlacement(IntPtr hWnd, ref Windowplacement lpwndpl);
 
         private void BtnKill_Click(object sender, EventArgs e)
         {
             int parentId = Convert.ToInt32(dataGridView1.SelectedRows[0].Cells[0].Value.ToString());
-            KillProcessAndChildren(parentId);
+            taskManagerLib.Kill(parentId);
+            UpdateGrid();
         }
     }
 }
